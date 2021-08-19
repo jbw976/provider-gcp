@@ -78,6 +78,45 @@ type clusterConnector struct {
 	kube client.Client
 }
 
+func (e *clusterExternal) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
+	cr, ok := mg.(*v1beta2.Cluster)
+	if !ok {
+		return managed.ExternalCreation{}, errors.New(errNotCluster)
+	}
+	cr.SetConditions(xpv1.Creating())
+
+	if cr.Status.AtProvider.Status == v1beta2.ClusterStateProvisioning {
+		// Wait until creation is complete if already provisioning.
+		for {
+			time.Sleep(time.Second * 5)
+			if cr.Status.AtProvider.Status == v1beta2.ClusterStateRunning {
+				// cluster creation is done
+				return managed.ExternalCreation{}, nil
+			}
+		}
+	}
+
+	// Generate GKE cluster from resource spec.
+	cluster := &container.Cluster{}
+	gke.GenerateCluster(meta.GetExternalName(cr), cr.Spec.ForProvider, cluster)
+
+	// When autopilot is enabled, node pools cannot be specified.
+	if cluster.Autopilot == nil || !cluster.Autopilot.Enabled {
+		// Insert default node pool for bootstrapping cluster. This is required
+		// to create a GKE cluster. After successful creation we delete the
+		// bootstrap node pool immediately and provision any subsequent node
+		// pools using the NodePool resource type.
+		gke.AddNodePoolForCreate(cluster)
+	}
+
+	create := &container.CreateClusterRequest{
+		Cluster: cluster,
+	}
+
+	_, err := e.cluster.Projects.Locations.Clusters.Create(gke.GetFullyQualifiedParent(e.projectID, cr.Spec.ForProvider), create).Context(ctx).Do()
+	return managed.ExternalCreation{}, errors.Wrap(err, errCreateCluster)
+}
+
 func (c *clusterConnector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
 	projectID, opts, err := gcp.GetAuthInfo(ctx, c.kube, mg)
 	if err != nil {
@@ -135,39 +174,6 @@ func (e *clusterExternal) Observe(ctx context.Context, mg resource.Managed) (man
 		ResourceUpToDate:  u,
 		ConnectionDetails: connectionDetails(existing),
 	}, nil
-}
-
-func (e *clusterExternal) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
-	cr, ok := mg.(*v1beta2.Cluster)
-	if !ok {
-		return managed.ExternalCreation{}, errors.New(errNotCluster)
-	}
-	cr.SetConditions(xpv1.Creating())
-
-	// Wait until creation is complete if already provisioning.
-	if cr.Status.AtProvider.Status == v1beta2.ClusterStateProvisioning {
-		return managed.ExternalCreation{}, nil
-	}
-
-	// Generate GKE cluster from resource spec.
-	cluster := &container.Cluster{}
-	gke.GenerateCluster(meta.GetExternalName(cr), cr.Spec.ForProvider, cluster)
-
-	// When autopilot is enabled, node pools cannot be specified.
-	if cluster.Autopilot == nil || !cluster.Autopilot.Enabled {
-		// Insert default node pool for bootstrapping cluster. This is required
-		// to create a GKE cluster. After successful creation we delete the
-		// bootstrap node pool immediately and provision any subsequent node
-		// pools using the NodePool resource type.
-		gke.AddNodePoolForCreate(cluster)
-	}
-
-	create := &container.CreateClusterRequest{
-		Cluster: cluster,
-	}
-
-	_, err := e.cluster.Projects.Locations.Clusters.Create(gke.GetFullyQualifiedParent(e.projectID, cr.Spec.ForProvider), create).Context(ctx).Do()
-	return managed.ExternalCreation{}, errors.Wrap(err, errCreateCluster)
 }
 
 func (e *clusterExternal) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
