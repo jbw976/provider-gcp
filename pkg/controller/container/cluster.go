@@ -199,11 +199,10 @@ func (e *clusterExternal) Update(ctx context.Context, mg resource.Managed) (mana
 		return managed.ExternalUpdate{}, nil
 	}
 
-	// GKE uses different update methods depending on the field that is being
-	// changed. gke.IsUpToDate returns the appropriate update operation based on
-	// the difference in the desired and existing spec. Only one field can be
-	// updated at a time, so if there are multiple diffs, the next one will be
-	// handled after the current one is completed.
+	// GKE uses different update methods depending on the field that is being changed.
+	// gke.IsUpToDate returns the appropriate update operation based on the difference in the
+	// desired and existing spec. Only one field can be updated at a time, so if there are multiple
+	// diffs, the next one will be handled after the current one is completed.
 	_, err = fn(ctx, e.cluster, gke.GetFullyQualifiedName(e.projectID, cr.Spec.ForProvider, meta.GetExternalName(cr)))
 	return managed.ExternalUpdate{}, errors.Wrap(err, errUpdateCluster)
 }
