@@ -43,8 +43,8 @@ const (
 	errorGetFailed  = "cannot get the DNSPolicy"
 	errNotDNSPolicy = "managed resource is not a DNSPolicy custom resource"
 	// err_NewClient           = "cannot create new DNS Service"
-	// err_CannotCreate        = "cannot create new DNSPolicy"
-	errorCannotDelete = "cannot delete new DNSPolicy"
+	errCreatePolicy = "cannot create DNSPolicy"
+	// errorCannotDelete = "cannot delete new DNSPolicy"
 	// err_ManagedUpdateFailed = "cannot update DNSPolicy custom resource"
 	// err_CheckUpToDate       = "cannot determine if DNSPolicy is up to date"
 )
@@ -62,7 +62,7 @@ func SetupPolicy(mgr ctrl.Manager, o controller.Options) error {
 	r := managed.NewReconciler(mgr,
 		resource.ManagedKind(v1alpha1.PolicyGroupVersionKind),
 		managed.WithExternalConnecter(&Connector{kube: mgr.GetClient()}),
-		managed.WithInitializers(dnsclient.NewCustomNameAsExternalName(mgr.GetClient())),
+		managed.WithInitializers(managed.NewNameAsExternalName(mgr.GetClient())),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
@@ -149,7 +149,7 @@ func (e *External) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		e.projectID,
 		args,
 	).Context(ctx).Do()
-	return managed.ExternalCreation{}, errors.Wrap(err, errCannotCreate)
+	return managed.ExternalCreation{}, errors.Wrap(err, errCreatePolicy)
 }
 
 // Update is ..
